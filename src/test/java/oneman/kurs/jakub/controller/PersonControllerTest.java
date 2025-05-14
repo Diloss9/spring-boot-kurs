@@ -1,6 +1,5 @@
 package oneman.kurs.jakub.controller;
 
-import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -10,17 +9,14 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
 
+import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
+import static org.hamcrest.Matchers.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
-import static org.hamcrest.CoreMatchers.startsWith;
-import static org.hamcrest.Matchers.hasSize;
-import static org.hamcrest.Matchers.is;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
-
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -84,14 +80,12 @@ class PersonControllerTest {
 							.contentType(MediaType.APPLICATION_JSON))
 					.andExpect(status().isBadRequest());
 		}
+
 	@Test
 	void postPersonAndVerify() throws Exception {
-		int initialSize = mockMvc.perform(get("/persons"))
+			mockMvc.perform(get("/persons"))
 				.andExpect(status().isOk())
-				.andReturn()
-				.getResponse()
-				.getContentAsString()
-				.split("},").length;
+				.andExpect(jsonPath("$.length()",is (3)));
 
 		String validInput = """
         {
@@ -100,34 +94,23 @@ class PersonControllerTest {
         }
     """;
 
-		String location = mockMvc.perform(post("/persons")
+		MvcResult validResult = mockMvc.perform(post("/persons")
 						.content(validInput)
 						.contentType(MediaType.APPLICATION_JSON))
 				.andExpect(status().isCreated())
-				.andExpect(header().exists(HttpHeaders.LOCATION))
-				.andExpect(header().string(HttpHeaders.LOCATION, startsWith("/persons/")))
-				.andReturn()
-				.getResponse()
-				.getHeader(HttpHeaders.LOCATION);
+				.andReturn();
 
-		Assertions.assertNotNull(location);
-		String personId = location.substring(location.lastIndexOf("/") + 1);
-		assertFalse(personId.isEmpty(), "Person ID should be returned");
+		String validLocation = validResult.getResponse().getHeader(HttpHeaders.LOCATION);
+		assertThat(validLocation).as("Location header should not be null").isNotNull();
 
+		mockMvc.perform((get("/persons")))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.length()",is (4)));
 
-		mockMvc.perform(get(location))
+		mockMvc.perform(get(validLocation))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.first_name", is("Jakub")))
 				.andExpect(jsonPath("$.last_name", is("Waclawowicz")));
-
-		int sizeAfterValidPost = mockMvc.perform(get("/persons"))
-				.andExpect(status().isOk())
-				.andReturn()
-				.getResponse()
-				.getContentAsString()
-				.split("},").length;
-
-		Assertions.assertEquals(initialSize + 1, sizeAfterValidPost, "The number of persons should have increased by 1.");
 
 		String invalidInput = """
         {
@@ -135,18 +118,17 @@ class PersonControllerTest {
         }
     """;
 
-		mockMvc.perform(post("/persons")
+		MvcResult invalidResult = mockMvc.perform(post("/persons")
 						.content(invalidInput)
 						.contentType(MediaType.APPLICATION_JSON))
-				.andExpect(status().isBadRequest());
+				.andExpect(status().isBadRequest())
+				.andReturn();
 
-		int sizeAfterInvalidPost = mockMvc.perform(get("/persons"))
+		String invalidLocation = invalidResult.getResponse().getHeader(HttpHeaders.LOCATION);
+		assertThat(invalidLocation).as("Location header should be null").isNull();
+
+		mockMvc.perform(get("/persons"))
 				.andExpect(status().isOk())
-				.andReturn()
-				.getResponse()
-				.getContentAsString()
-				.split("},").length;
-
-		Assertions.assertEquals(sizeAfterValidPost, sizeAfterInvalidPost, "The number of persons should not have changed after a failed POST.");
+				.andExpect(jsonPath("$.length()").value(4));
 	}
 }
